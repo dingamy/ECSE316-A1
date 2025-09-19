@@ -23,6 +23,10 @@ class DNSClient {
         String server = null;
         String name = null;
 
+        //Validation flag 
+        Boolean isMx = false;
+        Boolean isNs = false;
+
         for (int i = 0; i < args.length; i++) {
             if (args[i].equals("-t")) {
                 i++;
@@ -46,9 +50,19 @@ class DNSClient {
                 }
                 port = args[i];
             } else if (args[i].equals("-mx")) {
+                if (isNs) {
+                    System.err.println("ERROR \t Cannot set both -mx and -ns");
+                    System.exit(1);
+                }
                 queryType = "MX";
+                isMx = true;
             } else if (args[i].equals("-ns")) {
+                if (isMx) {
+                    System.err.println("ERROR \t Cannot set both -mx and -ns");
+                    System.exit(1);
+                }
                 queryType = "NS";
+                isNs = true;
             } else if (args[i].startsWith("@")) {
                 if (args[i].substring(1).isEmpty()) {
                     System.err.println("ERROR \t Missing server address after @");
@@ -93,9 +107,23 @@ class DNSClient {
             System.exit(1);
         }
 
-        int timeout    = Integer.parseInt(params[0]);
+        int timeout = Integer.parseInt(params[0]);
+        if (timeout < 0) {
+            System.err.println("ERROR \t Timeout must be positive");
+            System.exit(1);
+        }
+
         int maxRetries = Integer.parseInt(params[1]);
-        int port       = Integer.parseInt(params[2]);
+         if (maxRetries < 0) {
+            System.err.println("ERROR \t Retries must be positive");
+            System.exit(1);
+        }
+
+        int port = Integer.parseInt(params[2]);
+        if (port < 1 || port > 65535) {
+            System.err.println("ERROR \t Port must be in range 1-65535");
+            System.exit(1);
+        }
         String queryType = params[3];
         String server  = params[4];
         String name    = params[5];
@@ -106,33 +134,40 @@ class DNSClient {
         System.out.println("Server: " + server);
         System.out.println("Request type: " + queryType);
 
+        InetAddress serverAddress = convertToInetAddress(server);
+        if (serverAddress == null) {
+            System.err.println("ERROR \t Invalid server IP address");
+            System.exit(1);
+        }
+        System.out.println("...Preparing to send packet");
+    }
 
-        BufferedReader inFromUser = new BufferedReader(new InputStreamReader(System.in));
-
-//        return reader.lines().collect(Collectors.joining("\n"));
-        DatagramSocket clientSocket = new DatagramSocket();
-
-        InetAddress IPAddress = InetAddress.getByName("localhost");
-
-        byte[] sendData = new byte[1024];
-        byte[] receiveData = new byte[1024];
-
-        String sentence = inFromUser.readLine();
-        sendData = sentence.getBytes();
-        DatagramPacket sendPacket =
-                new DatagramPacket(sendData, sendData.length, IPAddress, 9876);
-
-        clientSocket.send(sendPacket);
-
-        DatagramPacket receivePacket =
-                new DatagramPacket(receiveData, receiveData.length);
-
-        clientSocket.receive(receivePacket);
-
-        String modifiedSentence =
-                new String(receivePacket.getData());
-
-        System.out.println("FROM SERVER:" + modifiedSentence);
-        clientSocket.close();
+    //Helper function converting IP string into InetAddress; return null if invalid
+    public static InetAddress convertToInetAddress(String ip) {
+        String[] parts = ip.split("\\.");
+        //IPv4 should exactly 4 parts since 32-bit 
+        if (parts.length != 4) {
+            return null;
+        }
+        //addr = [0, 0, 0, 0]
+        byte[] bytes = new byte[4];
+        for (int i = 0; i < 4; i++) {
+            int part;
+            try {
+                part = Integer.parseInt(parts[i]);
+            } catch (NumberFormatException e) {
+                return null;
+            }
+            // Ipv4 addr is 32-bit, each octet is 8 bits and ranges from 0-255 (2^8 = 256)
+            if (part < 0 || part > 255) {
+                return null;
+            }
+            bytes[i] = (byte) part;
+        }
+        try {
+            return InetAddress.getByAddress(bytes);
+        } catch (UnknownHostException e) {
+            return null;
+        }
     }
 }
