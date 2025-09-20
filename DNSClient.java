@@ -139,6 +139,8 @@ class DNSClient {
             System.err.println("ERROR \t Invalid server IP address");
             System.exit(1);
         }
+
+        // Create UDP socket and sending 
         System.out.println("...Preparing to send packet");
     }
 
