@@ -1,7 +1,7 @@
 
+import java.io.*;
 import java.net.*;
 import java.util.*;
-import java.io.*;
 
 class DNSClient {
 
@@ -57,27 +57,32 @@ class DNSClient {
         String[] parts = ip.split("\\.");
         //IPv4 should exactly 4 parts since 32-bit 
         if (parts.length != 4) {
-            return null;
+            System.err.println("ERROR \t Invalid IPv4 address format.");
+            System.exit(1);
         }
         //addr = [0, 0, 0, 0]
         byte[] bytes = new byte[4];
         for (int i = 0; i < 4; i++) {
-            int part;
             try {
-                part = Integer.parseInt(parts[i]);
+                int part = Integer.parseInt(parts[i]);
+                // Each part must be in range 0-255
+                if (part < 0 || part > 255) {
+                    System.err.println("ERROR \t Each part of the address must be between 0-255.");
+                    System.exit(1);
+                }
+                // Ipv4 addr is 32-bit, each octet is 8 bits and ranges from 0-255 (2^8 = 256)
+                bytes[i] = (byte) part;
             } catch (NumberFormatException e) {
-                return null;
+                System.err.println("ERROR \t Each part of the address must be numeric.");
+                System.exit(1);
             }
-            // Ipv4 addr is 32-bit, each octet is 8 bits and ranges from 0-255 (2^8 = 256)
-            if (part < 0 || part > 255) {
-                return null;
-            }
-            bytes[i] = (byte) part;
         }
         try {
             return InetAddress.getByAddress(bytes);
         } catch (UnknownHostException e) {
-            return null;
+            System.err.println("ERROR \t Invalid IP address.");
+            System.exit(1);
+            return null; // Unreachable, but required by the compiler
         }
     }
 
@@ -101,6 +106,10 @@ class DNSClient {
                     System.err.println("ERROR \t Missing timeout value");
                     System.exit(1);
                 }
+                if (!isNumeric(args[i])) {
+                    System.err.println("ERROR \t Timeout must be a number");
+                    System.exit(1);
+                }
                 timeout = args[i];
             } else if (args[i].equals("-r")) {
                 i++;
@@ -108,11 +117,19 @@ class DNSClient {
                     System.err.println("ERROR \t Missing max retries value");
                     System.exit(1);
                 }
+                if (!isNumeric(args[i])) {
+                    System.err.println("ERROR \t Max retries must be a number");
+                    System.exit(1);
+                }
                 maxRetries = args[i];
             } else if (args[i].equals("-p")) {
                 i++;
                 if (i >= args.length) {
                     System.err.println("ERROR \t Missing port value");
+                    System.exit(1);
+                }
+                if (!isNumeric(args[i])) {
+                    System.err.println("ERROR \t Port must be a number");
                     System.exit(1);
                 }
                 port = args[i];
@@ -284,19 +301,6 @@ class DNSClient {
 
         String[] params = getArguments(args);
 
-        if (!isNumeric(params[0])) {
-            System.err.println("ERROR \t Timeout must be a number");
-            System.exit(1);
-        }
-        if (!isNumeric(params[1])) {
-            System.err.println("ERROR \t Max retries must be a number");
-            System.exit(1);
-        }
-        if (!isNumeric(params[2])) {
-            System.err.println("ERROR \t Port must be a number");
-            System.exit(1);
-        }
-
         int timeout = Integer.parseInt(params[0]);
         if (timeout < 0) {
             System.err.println("ERROR \t Timeout must be positive");
@@ -318,16 +322,12 @@ class DNSClient {
         String server = params[4];
         String name = params[5];
 
+        InetAddress serverAddress = convertToInetAddress(server);
+
         // Print parsed info
         System.out.println("DnsClient sending request for " + name);
         System.out.println("Server: " + server);
         System.out.println("Request type: " + queryType);
-
-        InetAddress serverAddress = convertToInetAddress(server);
-        if (serverAddress == null) {
-            System.err.println("ERROR \t Invalid server IP address");
-            System.exit(1);
-        }
 
         //Sending the query
         SendResult r = sendQuery(serverAddress, port, timeout, maxRetries, name, queryType);
