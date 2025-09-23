@@ -64,7 +64,7 @@ class DNSClient {
         return true;
     }
 
-    //Helper function converting IP string into InetAddress; return null if invalid
+    //Helper function converting IP string into InetAddress
     public static InetAddress convertToInetAddress(String ip) {
         String[] parts = ip.split("\\.");
         //IPv4 should exactly 4 parts since 32-bit 
@@ -260,11 +260,11 @@ class DNSClient {
             String queryTypeStr) {
         int retries = 0;
         while (retries < maxRetries) {
-            DatagramSocket sock = null;
+            DatagramSocket socket = null;
             try {
-                sock = new DatagramSocket();
+                socket = new DatagramSocket();
                 // Set socket timeout in milliseconds
-                sock.setSoTimeout(Math.max(0, timeoutSeconds) * 1000);
+                socket.setSoTimeout(Math.max(0, timeoutSeconds) * 1000);
 
                 // Build query packet
                 QueryResult q = buildQuery(qname, queryTypeStr);
@@ -272,12 +272,12 @@ class DNSClient {
 
                 //start time in nanoseconds 
                 double startNs = System.nanoTime();
-                sock.send(sendPacket);
+                socket.send(sendPacket);
 
                 //Buffer to store data received from the server
                 byte[] buffer = new byte[1024];
                 DatagramPacket receivedPacket = new DatagramPacket(buffer, buffer.length);
-                sock.receive(receivedPacket);
+                socket.receive(receivedPacket);
                 double elapsedSecs = (System.nanoTime() - startNs) / 1000000000.0;
 
                 // Copy only the received data without unused space 
@@ -291,8 +291,8 @@ class DNSClient {
                 System.err.println("ERROR\tSocket error: " + ioe.getMessage());
                 System.exit(1);
             } finally {
-                if (sock != null) {
-                    sock.close();
+                if (socket != null) {
+                    socket.close();
                 }
             }
         }
