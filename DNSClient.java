@@ -28,19 +28,20 @@ class DNSClient {
 
         final int transactionId;
         final byte[] response;
-        final long elapsedMillis;
+        final double elapsedSeconds;
         final int retriesUsed;
 
-        SendResult(int id, byte[] resp, long ms, int retries) {
+        SendResult(int id, byte[] resp, double s, int retries) {
             this.transactionId = id;
             this.response = resp;
-            this.elapsedMillis = ms;
+            this.elapsedSeconds = s;
             this.retriesUsed = retries;
         }
     }
 
     // Helper class to hold name result after parsing response packet
     private static final class NameResult {
+
         String name;
         int nextOffset;
 
@@ -270,18 +271,18 @@ class DNSClient {
                 DatagramPacket sendPacket = new DatagramPacket(q.packet, q.packet.length, serverAddr, port);
 
                 //start time in nanoseconds 
-                long startNs = System.nanoTime();
+                double startNs = System.nanoTime();
                 sock.send(sendPacket);
 
                 //Buffer to store data received from the server
                 byte[] buffer = new byte[1024];
                 DatagramPacket receivedPacket = new DatagramPacket(buffer, buffer.length);
                 sock.receive(receivedPacket);
-                long elapsedMs = (System.nanoTime() - startNs) / 1_000_000;
+                double elapsedSecs = (System.nanoTime() - startNs) / 1000000000.0;
 
                 // Copy only the received data without unused space 
                 byte[] resp = Arrays.copyOf(receivedPacket.getData(), receivedPacket.getLength());
-                return new SendResult(q.transactionId, resp, elapsedMs, retries);
+                return new SendResult(q.transactionId, resp, elapsedSecs, retries);
 
             } catch (SocketTimeoutException te) {
                 System.out.println("Timeout occurred. Retrying " + (retries + 1) + "/" + maxRetries + "...");
@@ -316,23 +317,23 @@ class DNSClient {
                 }
                 pos = pointer;
                 jumped = true;
-            }
-            // End of name
+            } // End of name
             else if (length == 0) {
                 pos++;
                 break;
-            } 
-            // Normal label
+            } // Normal label
             else {
                 pos++;
-                if (sb.length() > 0) sb.append(".");
+                if (sb.length() > 0) {
+                    sb.append(".");
+                }
                 for (int i = 0; i < length; i++) {
-                    sb.append((char)(name[pos++] & 0xFF));
+                    sb.append((char) (name[pos++] & 0xFF));
                 }
             }
         }
-            int next = jumped ? jumpPos : pos;
-    return new NameResult(sb.toString(), next);
+        int next = jumped ? jumpPos : pos;
+        return new NameResult(sb.toString(), next);
     }
 
     private static int parseRecords(byte[] response, int pos, int count, String authStr, String sectionName) {
@@ -350,10 +351,10 @@ class DNSClient {
             switch (type) {
                 case TYPE_A:
                     if (rdLength == 4) {
-                        String ip = (response[pos] & 0xFF) + "." +
-                                    (response[pos + 1] & 0xFF) + "." +
-                                    (response[pos + 2] & 0xFF) + "." +
-                                    (response[pos + 3] & 0xFF);
+                        String ip = (response[pos] & 0xFF) + "."
+                                + (response[pos + 1] & 0xFF) + "."
+                                + (response[pos + 2] & 0xFF) + "."
+                                + (response[pos + 3] & 0xFF);
                         System.out.println("IP\t" + ip + "\t" + ttl + "\t" + authStr);
                     } else {
                         System.err.println("ERROR\tUnexpected RDLENGTH for A record: " + rdLength);
@@ -388,7 +389,6 @@ class DNSClient {
         }
         return pos;
     }
-
 
     private static void parseAnswer(byte[] response) {
         // Parse header
@@ -460,7 +460,6 @@ class DNSClient {
             pos = parseRecords(response, pos, arCount, authStr, "Additional");
         }
     }
-        
 
     public static void main(String args[]) throws Exception {
 
@@ -498,10 +497,7 @@ class DNSClient {
         SendResult r = sendQuery(serverAddress, port, timeout, maxRetries, name, queryType);
 
         //Logging the result
-        System.out.println("Transaction ID of query:" + r.transactionId);
-        System.out.println("Received " + r.response.length + " bytes in " + r.elapsedMillis + " ms"
-                + " (retries used: " + r.retriesUsed + ")");
-        System.out.println("Response received after " + r.elapsedMillis + "ms (" + r.retriesUsed + " retries)");
+        System.out.println("Response received after " + String.format("%.3f", r.elapsedSeconds) + " seconds (" + r.retriesUsed + " retries)");
 
         parseAnswer(r.response);
     }
