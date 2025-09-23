@@ -390,12 +390,34 @@ class DNSClient {
     }
 
 
-    private static void parseAnswer(byte[] response) {
+    private static void parseAnswer(byte[] response, int expectedId) {
         // Parse header
         int id = ((response[0] & 0xFF) << 8) | (response[1] & 0xFF);
         int flags = ((response[2] & 0xFF) << 8) | (response[3] & 0xFF);
-        int aa = (flags >> 10) & 1;
-        int rcode = flags & 0xF;
+      
+
+        if (id != expectedId) {
+            System.err.println("ERROR\tResponse ID does not match the query ID");
+            System.exit(1);
+        }
+
+        // decode flag bits
+        int qr = (flags >> 15) & 0x1;   // Query=0, Response=1
+        if (qr != 1) {
+            System.err.println("ERROR\tQR bit is incorrect (Expected 1)");
+            System.exit(1);
+        }
+        int opcode = (flags >> 11) & 0xF; // usually 0 (standard query)
+        int aa = (flags >> 10) & 0x1; // authoritative answer
+        
+        int tc = (flags >> 9) & 0x1; // truncated
+        int rd = (flags >> 8) & 0x1; // recursion desired
+        int ra = (flags >> 7) & 0x1; // recursion available
+        if (ra != 1) {
+            System.err.println("ERROR\tServer does not support recursive queries");
+        }
+        int z = (flags >> 4) & 0x7; // reserved, must be 0
+        int rcode = (flags) & 0xF; // response code
 
         switch (rcode) {
             case 0:
@@ -442,19 +464,19 @@ class DNSClient {
         // Utility for auth string
         String authStr = (aa == 1) ? "auth" : "nonauth";
 
-        // -------- Answer Section --------
+        // Answer Section
         if (anCount > 0) {
             System.out.println("***Answer Section (" + anCount + " records)***");
             pos = parseRecords(response, pos, anCount, authStr, "Answer");
         }
 
-        // -------- Authority Section --------
+        // Authority Section
         if (nsCount > 0) {
             System.out.println("***Authority Section (" + nsCount + " records)***");
             pos = parseRecords(response, pos, nsCount, authStr, "Authority");
         }
 
-        // -------- Additional Section --------
+        // Additional Section
         if (arCount > 0) {
             System.out.println("***Additional Section (" + arCount + " records)***");
             pos = parseRecords(response, pos, arCount, authStr, "Additional");
@@ -503,6 +525,6 @@ class DNSClient {
                 + " (retries used: " + r.retriesUsed + ")");
         System.out.println("Response received after " + r.elapsedMillis + "ms (" + r.retriesUsed + " retries)");
 
-        parseAnswer(r.response);
+        parseAnswer(r.response, r.transactionId);
     }
 };
