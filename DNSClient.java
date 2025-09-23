@@ -39,6 +39,17 @@ class DNSClient {
         }
     }
 
+    // Helper class to hold name result after parsing response packet
+    private static final class NameResult {
+        String name;
+        int nextOffset;
+
+        NameResult(String n, int o) {
+            this.name = n;
+            this.nextOffset = o;
+        }
+    }
+
     // Helper function to check if a string is numeric
     private static boolean isNumeric(String strNum) {
         if (strNum == null) {
@@ -289,13 +300,167 @@ class DNSClient {
         return null; // unreachable
     }
 
-    private void parseAnswer(byte[] response) {
-        // Implementation of response parsing can be added here
+    private static NameResult parseName(byte[] name, int offset) {
+        StringBuilder sb = new StringBuilder();
+        int pos = offset;
+        boolean jumped = false;
+        int jumpPos = -1;
+
+        while (true) {
+            int length = name[pos] & 0xFF;
+            // Checks if there is a pointer for compression
+            if ((length & 0xC0) == 0xC0) {
+                int pointer = ((length & 0x3F) << 8) | (name[pos + 1] & 0xFF);
+                if (!jumped) {
+                    jumpPos = pos + 2; // where we’d continue if we didn’t jump
+                }
+                pos = pointer;
+                jumped = true;
+            }
+            // End of name
+            else if (length == 0) {
+                pos++;
+                break;
+            } 
+            // Normal label
+            else {
+                pos++;
+                if (sb.length() > 0) sb.append(".");
+                for (int i = 0; i < length; i++) {
+                    sb.append((char)(name[pos++] & 0xFF));
+                }
+            }
+        }
+            int next = jumped ? jumpPos : pos;
+    return new NameResult(sb.toString(), next);
     }
 
-    private void parseName() {
-        // Implementation of name parsing can be added here 
+    private static int parseRecords(byte[] response, int pos, int count, String authStr, String sectionName) {
+        for (int i = 0; i < count; i++) {
+            NameResult rrName = parseName(response, pos);
+            pos = rrName.nextOffset;
+
+            int type = ((response[pos] & 0xFF) << 8) | (response[pos + 1] & 0xFF);
+            int clazz = ((response[pos + 2] & 0xFF) << 8) | (response[pos + 3] & 0xFF);
+            long ttl = ((response[pos + 4] & 0xFFL) << 24) | ((response[pos + 5] & 0xFFL) << 16)
+                    | ((response[pos + 6] & 0xFFL) << 8) | (response[pos + 7] & 0xFFL);
+            int rdLength = ((response[pos + 8] & 0xFF) << 8) | (response[pos + 9] & 0xFF);
+            pos += 10;
+
+            switch (type) {
+                case TYPE_A:
+                    if (rdLength == 4) {
+                        String ip = (response[pos] & 0xFF) + "." +
+                                    (response[pos + 1] & 0xFF) + "." +
+                                    (response[pos + 2] & 0xFF) + "." +
+                                    (response[pos + 3] & 0xFF);
+                        System.out.println("IP\t" + ip + "\t" + ttl + "\t" + authStr);
+                    } else {
+                        System.err.println("ERROR\tUnexpected RDLENGTH for A record: " + rdLength);
+                    }
+                    pos += rdLength;
+                    break;
+
+                case TYPE_CNAME:
+                    NameResult cname = parseName(response, pos);
+                    System.out.println("CNAME\t" + cname.name + "\t" + ttl + "\t" + authStr);
+                    pos = cname.nextOffset;
+                    break;
+
+                case TYPE_NS:
+                    NameResult ns = parseName(response, pos);
+                    System.out.println("NS\t" + ns.name + "\t" + ttl + "\t" + authStr);
+                    pos = ns.nextOffset;
+                    break;
+
+                case TYPE_MX:
+                    int preference = ((response[pos] & 0xFF) << 8) | (response[pos + 1] & 0xFF);
+                    NameResult mx = parseName(response, pos + 2);
+                    System.out.println("MX\t" + mx.name + "\t" + preference + "\t" + ttl + "\t" + authStr);
+                    pos = mx.nextOffset;
+                    break;
+
+                default:
+                    System.out.println("ERROR\tUnsupported TYPE (" + type + ") in " + sectionName);
+                    pos += rdLength;
+                    break;
+            }
+        }
+        return pos;
     }
+
+
+    private static void parseAnswer(byte[] response) {
+        // Parse header
+        int id = ((response[0] & 0xFF) << 8) | (response[1] & 0xFF);
+        int flags = ((response[2] & 0xFF) << 8) | (response[3] & 0xFF);
+        int aa = (flags >> 10) & 1;
+        int rcode = flags & 0xF;
+
+        switch (rcode) {
+            case 0:
+                break;
+            case 1:
+                System.err.println("ERROR\tFormat error: the name server was unable to interpret the query");
+                System.exit(1);
+                break;
+            case 2:
+                System.err.println("ERROR\tServer failure: the name server was unable to process this query due to a problem with the name server");
+                System.exit(1);
+                break;
+            case 3:
+                System.out.println("NOTFOUND");
+                System.exit(0);
+                break;
+            case 4:
+                System.err.println("ERROR\tNot implemented: the name server does not support the requested kind of query");
+                System.exit(1);
+                break;
+            case 5:
+                System.err.println("ERROR\tRefused: the name server refuses to perform the requested operation for policy reasons");
+                System.exit(1);
+                break;
+            default:
+                System.err.println("ERROR\tUnexpected RCODE: " + rcode);
+                System.exit(1);
+        }
+
+        int qdCount = ((response[4] & 0xFF) << 8) | (response[5] & 0xFF);
+        int anCount = ((response[6] & 0xFF) << 8) | (response[7] & 0xFF);
+        int nsCount = ((response[8] & 0xFF) << 8) | (response[9] & 0xFF);
+        int arCount = ((response[10] & 0xFF) << 8) | (response[11] & 0xFF);
+
+        int pos = 12; // after header
+
+        // Skip over Question section
+        for (int q = 0; q < qdCount; q++) {
+            NameResult qname = parseName(response, pos);
+            pos = qname.nextOffset;
+            pos += 4; // skip QTYPE + QCLASS
+        }
+
+        // Utility for auth string
+        String authStr = (aa == 1) ? "auth" : "nonauth";
+
+        // -------- Answer Section --------
+        if (anCount > 0) {
+            System.out.println("***Answer Section (" + anCount + " records)***");
+            pos = parseRecords(response, pos, anCount, authStr, "Answer");
+        }
+
+        // -------- Authority Section --------
+        if (nsCount > 0) {
+            System.out.println("***Authority Section (" + nsCount + " records)***");
+            pos = parseRecords(response, pos, nsCount, authStr, "Authority");
+        }
+
+        // -------- Additional Section --------
+        if (arCount > 0) {
+            System.out.println("***Additional Section (" + arCount + " records)***");
+            pos = parseRecords(response, pos, arCount, authStr, "Additional");
+        }
+    }
+        
 
     public static void main(String args[]) throws Exception {
 
@@ -337,5 +502,7 @@ class DNSClient {
         System.out.println("Received " + r.response.length + " bytes in " + r.elapsedMillis + " ms"
                 + " (retries used: " + r.retriesUsed + ")");
         System.out.println("Response received after " + r.elapsedMillis + "ms (" + r.retriesUsed + " retries)");
+
+        parseAnswer(r.response);
     }
 };
