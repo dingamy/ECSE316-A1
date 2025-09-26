@@ -77,7 +77,7 @@ class DNSClient {
         for (int i = 0; i < 4; i++) {
             try {
                 int part = Integer.parseInt(parts[i]);
-                // Each part must be in range 0-255
+                //Each part must be in range 0-255
                 if (part < 0 || part > 255) {
                     System.err.println("ERROR \t Each part of the address must be between 0-255.");
                     System.exit(1);
@@ -173,7 +173,7 @@ class DNSClient {
                 }
                 name = args[i];
             } else {
-                System.err.println("ERROR \t Incorrect input syntax: " + args[i]);
+                System.err.println("ERROR \t Incorrect input: " + args[i]);
                 System.exit(1);
             }
         }
