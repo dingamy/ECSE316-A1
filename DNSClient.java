@@ -382,7 +382,7 @@ class DNSClient {
                     break;
 
                 default:
-                    System.out.println("ERROR\tUnsupported TYPE (" + type + ") in " + sectionName);
+                    System.out.println("ERROR\tUnsupported type (" + type + ") in " + sectionName);
                     pos += rdLength;
                     break;
             }
@@ -444,7 +444,7 @@ class DNSClient {
                 System.exit(1);
                 break;
             default:
-                System.err.println("ERROR\tUnexpected RCODE: " + rcode);
+                System.err.println("ERROR\t RCODE: " + rcode);
                 System.exit(1);
         }
 
